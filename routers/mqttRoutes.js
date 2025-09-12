@@ -15,7 +15,7 @@ const { stringify } = require("csv-stringify");
 const redis = require("redis");
 
 const redisClient = redis.createClient({
-  url: process.env.REDIS_URL || 'redis://localhost:6379',
+  url: process.env.REDIS_URL || 'redis://13.233.73.61:6379',
   socket: {
     reconnectStrategy: retries => Math.min(retries * 50, 1000), 
   }
