@@ -1,0 +1,131 @@
+const mongoose = require("mongoose");
+const bcrypt = require("bcryptjs");
+const jwt = require("jsonwebtoken");
+const crypto = require('crypto');
+
+const employeeSchema = new mongoose.Schema(
+  {
+    name: {
+      type: String,
+      required: true,
+    },
+    email: {
+      type: String,
+      required: true,
+      unique: true,
+    },
+    phonenumber: {
+      type: String,
+      required: false,
+    },
+    company: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Company",
+      required: true,
+    },
+    supervisor: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Supervisor",
+      required: false,
+    },
+    password: {
+      type: String,
+      select: false,
+      required: [true, "Password is required"],
+    },
+    resetPasswordToken: String,
+    resetPasswordExpire: Date,
+    topics: {
+      type: [String],
+    },
+    favorites: {
+      type: [String],
+      default: [],
+    },
+    graphwl: {
+      type: [String],
+      default: [],
+    },
+    layout: {
+      type: String,
+      default: "layout1",
+    },
+    headerOne : {
+      type : String,
+      required : true
+    },
+    headerTwo : {
+      type : String,
+      required : false
+    },
+    assignedDigitalMeters: {
+      type: [
+        {
+          topic: String,
+          meterType: String,
+          minValue: Number,
+          maxValue: Number,
+          ticks: Number,
+          label : String
+        },
+      ],
+      default: [],
+    },
+    role: {
+      type: String,
+      default: "employee",
+    },
+  },
+  {
+    timestamps: true,
+  }
+);
+
+employeeSchema.pre("save", async function (next) {
+  if (!this.isModified("password")) {
+    return next();
+  }
+  const salt = await bcrypt.genSalt(10);
+  this.password = await bcrypt.hash(this.password, salt);
+  next();
+});
+
+employeeSchema.methods.getToken = function () {
+  return jwt.sign(
+    {
+      id: this._id,
+      name: this.name,
+      email: this.email,
+      role: this.role,
+      assignedDigitalMeters: this.assignedDigitalMeters,
+    },
+    process.env.JWT_SECRET,
+    {
+      expiresIn: "3d",
+    }
+  );
+};
+
+employeeSchema.methods.verifyPass = async function (enteredPassword) {
+  return await bcrypt.compare(enteredPassword, this.password);
+};
+
+employeeSchema.methods.getResetPasswordToken = function () {
+  // Generate token
+  const resetToken = crypto.randomBytes(20).toString('hex');
+
+  // Hash token and set to resetPasswordToken field
+  this.resetPasswordToken = crypto
+    .createHash('sha256')
+    .update(resetToken)
+    .digest('hex');
+
+  // Set expire (10 minutes)
+  this.resetPasswordExpire = Date.now() + 10 * 60 * 1000;
+
+  return resetToken;
+};
+
+const Employee = mongoose.model("Employee", employeeSchema);
+
+module.exports = Employee;
