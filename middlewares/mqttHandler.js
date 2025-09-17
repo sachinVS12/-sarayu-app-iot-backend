@@ -48,12 +48,18 @@ class EmailQueue extends EventEmitter {
         const email = this.queue[0];
 
         if (email.retries >= MAX_MAIL_RETRIES) {
-          console.error(`Failed to send email after ${MAX_MAIL_RETRIES} retries:`, email);
+          console.error(
+            `Failed to send email after ${MAX_MAIL_RETRIES} retries:`,
+            email
+          );
           this.queue.shift();
           continue;
         }
 
-        if (email.timestamp + MAIL_RETRY_DELAY > currentTime && email.retries > 0) {
+        if (
+          email.timestamp + MAIL_RETRY_DELAY > currentTime &&
+          email.retries > 0
+        ) {
           break;
         }
 
@@ -92,7 +98,9 @@ class EmailQueue extends EventEmitter {
       );
 
       await Promise.all(sendPromises);
-      console.log(`Successfully sent emails to ${recipients.length} recipients`);
+      console.log(
+        `Successfully sent emails to ${recipients.length} recipients`
+      );
     } catch (error) {
       if (retries < MAX_MAIL_RETRIES) {
         throw error;
@@ -184,7 +192,8 @@ class MQTTHandler {
 
   parsePayload(payload, isBackupTopic = false) {
     try {
-      const payloadStr = typeof payload === "string" ? payload : payload.toString();
+      const payloadStr =
+        typeof payload === "string" ? payload : payload.toString();
 
       if (isBackupTopic) {
         const parsed = JSON.parse(payloadStr);
@@ -197,8 +206,14 @@ class MQTTHandler {
         const intervalSeconds = parseInt(parsed[1], 10);
         const values = parsed.slice(2).map((val) => parseFloat(val));
 
-        if (isNaN(initialTimestamp.getTime()) || isNaN(intervalSeconds) || values.some(isNaN)) {
-          throw new Error("Invalid timestamp, interval, or values in backup payload");
+        if (
+          isNaN(initialTimestamp.getTime()) ||
+          isNaN(intervalSeconds) ||
+          values.some(isNaN)
+        ) {
+          throw new Error(
+            "Invalid timestamp, interval, or values in backup payload"
+          );
         }
 
         return { initialTimestamp, intervalSeconds, values };
@@ -206,7 +221,10 @@ class MQTTHandler {
         try {
           const jsonParsed = JSON.parse(payloadStr);
           if (jsonParsed && typeof jsonParsed === "object") {
-            if (jsonParsed.message && jsonParsed.message.message !== undefined) {
+            if (
+              jsonParsed.message &&
+              jsonParsed.message.message !== undefined
+            ) {
               return jsonParsed.message.message;
             }
             if (jsonParsed.message !== undefined) {
@@ -233,7 +251,10 @@ class MQTTHandler {
       const parsedData = this.parsePayload(payload, isBackupTopic);
 
       if (parsedData === null) {
-        console.warn(`Unable to parse payload for topic ${topic}:`, payload.toString());
+        console.warn(
+          `Unable to parse payload for topic ${topic}:`,
+          payload.toString()
+        );
         return;
       }
 
@@ -274,7 +295,11 @@ class MQTTHandler {
     }
   }
 
-  queueBackupMessages(topic, baseTopic, { initialTimestamp, intervalSeconds, values }) {
+  queueBackupMessages(
+    topic,
+    baseTopic,
+    { initialTimestamp, intervalSeconds, values }
+  ) {
     if (!this.backupMessageQueue.has(topic)) {
       this.backupMessageQueue.set(topic, []);
     }
@@ -286,7 +311,9 @@ class MQTTHandler {
     const regularMessages = this.messageQueue.get(baseTopic);
 
     values.forEach((value, index) => {
-      const timestamp = new Date(initialTimestamp.getTime() + index * intervalSeconds * 1000);
+      const timestamp = new Date(
+        initialTimestamp.getTime() + index * intervalSeconds * 1000
+      );
       backupMessages.push({ value, timestamp });
       regularMessages.push({ value, timestamp: timestamp.getTime() });
     });
@@ -316,7 +343,9 @@ class MQTTHandler {
           { $push: { messages: { $each: backupDocs } } },
           { upsert: true }
         );
-        console.log(`Saved ${backupDocs.length} messages to Backup model for topic ${topic}`);
+        console.log(
+          `Saved ${backupDocs.length} messages to Backup model for topic ${topic}`
+        );
 
         // Save to Messages model (without |backup suffix)
         await MessagesModel.insertMany(
@@ -326,9 +355,14 @@ class MQTTHandler {
             timestamp,
           }))
         );
-        console.log(`Saved ${batch.length} messages to Messages model for topic ${baseTopic}`);
+        console.log(
+          `Saved ${batch.length} messages to Messages model for topic ${baseTopic}`
+        );
       } catch (error) {
-        console.error(`Failed to save backup messages for topic ${topic}:`, error);
+        console.error(
+          `Failed to save backup messages for topic ${topic}:`,
+          error
+        );
       }
     }
   }
@@ -357,7 +391,10 @@ class MQTTHandler {
       await Promise.allSettled(regularBatchOperations).then((results) => {
         results.forEach((result, index) => {
           if (result.status === "rejected") {
-            console.error(`Regular batch operation ${index} failed:`, result.reason);
+            console.error(
+              `Regular batch operation ${index} failed:`,
+              result.reason
+            );
           }
         });
       });
@@ -375,7 +412,10 @@ class MQTTHandler {
       ]);
 
       const recipients = [
-        ...new Set([...employees.map((emp) => emp.email), ...supervisors.map((sup) => sup.email)]),
+        ...new Set([
+          ...employees.map((emp) => emp.email),
+          ...supervisors.map((sup) => sup.email),
+        ]),
       ];
 
       if (recipients.length > 0) {
@@ -395,7 +435,9 @@ class MQTTHandler {
     }
 
     try {
-      const topicData = await AllTopicsModel.findOne({ topic }).select("thresholds").lean();
+      const topicData = await AllTopicsModel.findOne({ topic })
+        .select("thresholds")
+        .lean();
       if (topicData) {
         this.thresholdCache.set(topic, topicData);
         return topicData.thresholds;
@@ -409,34 +451,14 @@ class MQTTHandler {
 
   async updateThresholds(topic, newThresholds) {
     try {
-      if (!topic) {
-        console.error('Cannot update thresholds: Topic is required');
-        return;
-      }
-      
-      // If newThresholds is not an array, log error and return
-      if (!Array.isArray(newThresholds)) {
-        console.error(`Cannot update thresholds for topic ${topic}: Thresholds must be an array`);
-        return;
-      }
-      
-      console.log(`Updating thresholds for topic ${topic}:`, newThresholds);
-      
-      // Update the database
-      const result = await AllTopicsModel.updateOne(
-        { topic }, 
+      await AllTopicsModel.updateOne(
+        { topic },
         { thresholds: newThresholds },
         { upsert: true }
       );
-      
-      // Clear the cache for this topic
       this.thresholdCache.del(topic);
-      console.log(`Successfully updated thresholds for topic ${topic}`);
-      
-      return result;
     } catch (error) {
-      console.error(`Error updating thresholds for topic ${topic}:`, error);
-      throw error; // Re-throw to be handled by the caller
+      console.error("Error updating thresholds:", error);
     }
   }
 
@@ -463,7 +485,8 @@ class MQTTHandler {
           continue;
         }
 
-        const cooldownPassed = currentTime - currentState.lastAlertTime >= THRESHOLD_COOLDOWN_PERIOD;
+        const cooldownPassed =
+          currentTime - currentState.lastAlertTime >= THRESHOLD_COOLDOWN_PERIOD;
         if (!currentState.triggered || cooldownPassed) {
           topicState.set(stateKey, {
             triggered: true,
