@@ -757,7 +757,7 @@ router.post("/report-filter-csv", async (req, res) => {
       const timestampMap = new Map();
       filteredMessages.forEach(({ topic, messages }) => {
         messages.forEach((msg) => {
-          const timestamp = moment(msg.timestamp).tz("Asia/Kolkata").toISOString();
+          const timestamp = moment(msg.timestamp).tz("Asia/Kolkata").startOf('second').toISOString();
           const value = Number(msg.message);
 
           if (
@@ -768,15 +768,13 @@ router.post("/report-filter-csv", async (req, res) => {
             return;
           }
 
-          const normalizedTimestamp = moment(msg.timestamp).tz("Asia/Kolkata").startOf('second').toISOString();
-
-          if (!timestampMap.has(normalizedTimestamp)) {
-            const row = { timestamp: normalizedTimestamp };
+          if (!timestampMap.has(timestamp)) {
+            const row = { timestamp };
             topics.forEach((t) => (row[t] = "N/A"));
-            timestampMap.set(normalizedTimestamp, row);
+            timestampMap.set(timestamp, row);
           }
 
-          timestampMap.get(normalizedTimestamp)[topic] = value;
+          timestampMap.get(timestamp)[topic] = value;
         });
       });
 
@@ -1034,22 +1032,35 @@ router.post("/add", async (req, res) => {
     const { topic } = req.query;
     const { thresholds } = req.body;
     if (!topic) return res.status(400).json({ error: "Topic name is required" });
-    if (!Array.isArray(thresholds) || thresholds.length === 0) {
-      return res.status(400).json({ error: "Thresholds are required and must be an array" });
+    
+    // Allow empty thresholds array to clear all thresholds
+    if (!Array.isArray(thresholds)) {
+      return res.status(400).json({ error: "Thresholds must be an array" });
     }
 
     const existingTopic = await AllTopicsModel.findOne({ topic }).lean();
     if (existingTopic) {
+      // Update thresholds (can be empty array to clear all thresholds)
       updateThresholds(topic, thresholds);
       await AllTopicsModel.updateOne({ topic }, { thresholds });
       const updatedTopic = { ...existingTopic, thresholds };
       
+      // Clear the threshold cache for this topic
+      const cacheKey = `${CACHE_PREFIX}thresholds:${topic}`;
+      await safeRedisDel(cacheKey);
+      
       return res.status(200).json({ message: "Thresholds updated successfully", topic: updatedTopic });
     }
 
+    // Only create new topic if thresholds are provided
+    if (thresholds.length === 0) {
+      return res.status(400).json({ error: "Cannot create topic with empty thresholds" });
+    }
+    
     const newTopic = await AllTopicsModel.create({ topic, thresholds });
     res.status(201).json({ topic: newTopic });
   } catch (error) {
+    console.error("Error in /add endpoint:", error);
     res.status(500).json({ error: "Internal server error", details: error.message });
   }
 });
