@@ -1,3 +1,4 @@
+
 const express = require("express");
 const {
   getLatestLiveMessage,
@@ -1029,42 +1030,55 @@ const processMessages = (messages, granularity, aggregationMethod) => {
   });
 };
 
-router.post("/add", async (req, res) => {
-  try {
-    const { topic } = req.query;
-    const { thresholds } = req.body;
-    if (!topic) return res.status(400).json({ error: "Topic name is required" });
-    if (!Array.isArray(thresholds) || thresholds.length === 0) {
-      return res.status(400).json({ error: "Thresholds are required and must be an array" });
-    }
-
-    const existingTopic = await AllTopicsModel.findOne({ topic }).lean();
-    if (existingTopic) {
-      updateThresholds(topic, thresholds);
-      await AllTopicsModel.updateOne({ topic }, { thresholds });
-      const updatedTopic = { ...existingTopic, thresholds };
-      
-      return res.status(200).json({ message: "Thresholds updated successfully", topic: updatedTopic });
-    }
-
-    const newTopic = await AllTopicsModel.create({ topic, thresholds });
-    res.status(201).json({ topic: newTopic });
-  } catch (error) {
-    res.status(500).json({ error: "Internal server error", details: error.message });
-  }
-});
-
 router.get("/get", async (req, res) => {
   try {
     const { topic } = req.query;
-    if (!topic) return res.status(400).json({ error: "Topic name is required" });
+    if (!topic) {
+      return res.status(400).json({ success: false, message: "topic is required" });
+    }
 
-    const topicData = await AllTopicsModel.findOne({ topic }).lean();
-    if (!topicData) return res.status(404).json({ error: "Topic not found" });
+    const rawTopic = decodeURIComponent(topic);
+    const topicDoc = await AllTopicsModel.findOne({ topic: rawTopic }).select("thresholds -_id").lean();
+    const thresholds = topicDoc?.thresholds || [];
 
-    res.status(200).json({ data: topicData });
+    return res.status(200).json({ success: true, data: { thresholds } });
   } catch (error) {
-    res.status(500).json({ error: "Internal server error", details: error.message });
+    console.error("Error fetching thresholds:", error.message);
+    return res.status(500).json({ success: false, message: "Internal server error" });
+  }
+});
+
+router.post("/add", async (req, res) => {
+  try {
+    const { topic } = req.query;
+    const { thresholds } = req.body || {};
+
+    if (!topic) {
+      return res.status(400).json({ success: false, message: "topic is required" });
+    }
+    if (!Array.isArray(thresholds)) {
+      return res.status(400).json({ success: false, message: "thresholds must be an array" });
+    }
+
+    const rawTopic = decodeURIComponent(topic);
+    // Normalize thresholds: ensure numeric values and a resetValue is present
+    const processed = thresholds
+      .filter(t => t && (t.value !== undefined) && (t.color === "orange" || t.color === "red"))
+      .map(t => ({
+        color: t.color,
+        value: Number(t.value),
+        resetValue: (t.resetValue !== undefined) ? Number(t.resetValue) : Number(t.value)
+      }))
+      // sort ascending by value so frontend logic can assume order if needed
+      .sort((a, b) => a.value - b.value);
+
+    await updateThresholds(rawTopic, processed);
+
+    // No explicit Redis cache keys exist for thresholds here; mqttHandler will clear its own cache
+    return res.status(200).json({ success: true, data: { thresholds: processed } });
+  } catch (error) {
+    console.error("Error updating thresholds:", error.message);
+    return res.status(500).json({ success: false, message: "Internal server error" });
   }
 });
 

@@ -1,3 +1,4 @@
+
 const mqtt = require("mqtt");
 const MessagesModel = require("../models/messages-model");
 const AllTopicsModel = require("../models/all-mqtt-messages");
@@ -591,3 +592,4 @@ module.exports = {
   unsubscribeFromTopic: mqttHandler.unsubscribeFromTopic.bind(mqttHandler),
   updateThresholds: mqttHandler.updateThresholds.bind(mqttHandler),
 };
+
